@@ -14,7 +14,7 @@ Supports dynamic switching of the UI language and automatically remembers user p
 * Japanese
 
 ## How to Use
-[![](https://i.imgur.com/PQU9eMC.png)]
+[](https://i.imgur.com/PQU9eMC.png)
 * Load Audio: Click "Browse" to select your .mp3 file.
 * Set Background: (Optional) Select a background image (.jpg/.png).
 * BPM Setting: The program will automatically detect the BPM. If it is inaccurate, you can check "Manual Input" to correct it.
