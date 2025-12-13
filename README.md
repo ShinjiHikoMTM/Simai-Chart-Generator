@@ -22,3 +22,21 @@ Supports dynamic switching of the UI language and automatically remembers user p
 * Preview the generation log to confirm the estimated level (Lv.) and combo count.
 * If you are not satisfied, you can click "Generate" again (the result will change slightly each time).
 * Click "Export Files" and select the save folder. The program will automatically create a song folder and output maidata.txt.
+
+
+## Development
+* IDE: Visual Studio 2019 / 2022
+* Framework: .NET Framework 4.7.2
+
+Dependencies:
+* NAudio (Used for audio processing and BPM detection)
+
+
+## Installation and Build:
+* Clone this project to your local machine.
+* Open the .sln file using Visual Studio.
+* Restore NuGet Packages.
+* Build the solution.
+
+## License 
+*This project is open source under the MIT License. The generated charts are for learning and communication purposes only and should not be used for commercial purposes.
