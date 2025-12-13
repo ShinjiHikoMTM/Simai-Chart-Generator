@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.33801.447
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SiMaiGenerator", "SiMaiGenerator.csproj", "{ADE8502B-D98D-4080-9620-54C52C2697AA}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ADE8502B-D98D-4080-9620-54C52C2697AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ADE8502B-D98D-4080-9620-54C52C2697AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ADE8502B-D98D-4080-9620-54C52C2697AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ADE8502B-D98D-4080-9620-54C52C2697AA}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C3C6118E-9D92-45D6-ADBB-4FED234E1E8B}
+	EndGlobalSection
+EndGlobal
