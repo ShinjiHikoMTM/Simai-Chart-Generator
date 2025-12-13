@@ -3,7 +3,6 @@ An automatic chart generator for Simai/maimai based on audio analysis. Developed
 
 ## Key Feature
 * Clean Visuals: Significantly optimized the generation logic of Slides and Touches, adding a cooling mechanism to prevent "noodle screens" or visual obstruction.
-* Touch Hold Restriction: Long-press Touch (Ch) will only generate at the end of the song or in extremely quiet sections as a fade-out effect, without interfering with gameplay.
 * Dynamic Style: Each generation includes a random style factor (sparse, standard, dense), allowing for different experience patterns even for the same song.
 
 ## Multilingual Support
