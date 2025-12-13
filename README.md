@@ -39,4 +39,4 @@ Dependencies:
 * Build the solution.
 
 ## License 
-*This project is open source under the MIT License. The generated charts are for learning and communication purposes only and should not be used for commercial purposes.
+* This project is open source under the MIT License. The generated charts are for learning and communication purposes only and should not be used for commercial purposes.
