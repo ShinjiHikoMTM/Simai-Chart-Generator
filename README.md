@@ -2,16 +2,16 @@
 An automatic chart generator for Simai/maimai based on audio analysis. Developed in C# (WinForms), this tool can read MP3 audio and automatically generate charts for all difficulty levels from EASY to Re:MASTER, outputting them in a maidata.txt format readable by the Simai simulator.
 
 ## Key Feature
-Clean Visuals: Significantly optimized the generation logic of Slides and Touches, adding a cooling mechanism to prevent "noodle screens" or visual obstruction.
-Touch Hold Restriction: Long-press Touch (Ch) will only generate at the end of the song or in extremely quiet sections as a fade-out effect, without interfering with gameplay.
-Dynamic Style: Each generation includes a random style factor (sparse, standard, dense), allowing for different experience patterns even for the same song.
+* Clean Visuals: Significantly optimized the generation logic of Slides and Touches, adding a cooling mechanism to prevent "noodle screens" or visual obstruction.
+* Touch Hold Restriction: Long-press Touch (Ch) will only generate at the end of the song or in extremely quiet sections as a fade-out effect, without interfering with gameplay.
+* Dynamic Style: Each generation includes a random style factor (sparse, standard, dense), allowing for different experience patterns even for the same song.
 
 ## Multilingual Support
 Supports dynamic switching of the UI language and automatically remembers user preferences:
-English
-Traditional Chinese
-Simplified Chinese
-Japanese
+* English
+* Traditional Chinese
+* Simplified Chinese
+* Japanese
 
 ## How to Use
 [![](https://i.imgur.com/PQU9eMC.png)]
