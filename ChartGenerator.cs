@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Text;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SiMaiGenerator
 {
@@ -8,131 +9,86 @@ namespace SiMaiGenerator
     {
         private Random rnd = new Random();
 
-        private enum PatternType { Random, Stream, Trill, Zigzag, Resting }
-        private PatternType currentPattern = PatternType.Random;
+        // Patterns: Stream (circular), Trill (left-right), Resting
+        private enum PatternType { Stream, Trill, Resting }
+        private PatternType currentPattern = PatternType.Stream;
+
         private int patternCounter = 0;
         private int patternDirection = 1;
 
-        private int centerHoldLockTimer = 0;
-        private int touchHoldCooldown = 0;
         private int slideCooldown = 0;
         private int silenceCounter = 0;
 
-        private int touchSessionTimer = 0;
-        private int touchPatternMode = 0;
-        private int touchPatternStep = 1;
-        private int lastTouchNum = 1;
-        private int touchSessionIntervalCounter = 0;
+        // Break Cooldown
+        private int breakCooldown = 0;
 
-        private int currentSessionCount = 0;
-        private int maxSessionQuota = 0;
-        private int minSessionQuota = 0;
-        private int sessionGlobalCooldown = 0;
-
-        private bool dualToggleState = false;
-        private int dualToggleType = 0;
-
-        private int lastSlideEndPos = -1;
         private int[] keyBusyUntil = new int[9];
-        private int[] lastActionTimeOnKey = new int[9]; 
+        private int[] lastActionTimeOnKey = new int[9];
 
-        private double lastNoteTime = 0.0;
-        private int slideBusyUntil = -1;
+        private int currentSlideStart = -1;
+        private int currentSlideEnd = -1;
 
-        private int lastTapPos = -1;
-        private int lastTapTimeIndex = -1;
+        private int lastPos = 1;
 
         public string Generate(AudioAnalyzer analyzer, int targetBpm, double totalSeconds, int levelIndex)
         {
             StringBuilder sb = new StringBuilder();
-
             sb.Append($"({targetBpm})");
 
-            int division = 4;
-            double volumeThreshold = 0.2;
-            double spawnChance = 0.5;
-            double pSlide = 0.0, pTouch = 0.0, pHold = 0.0, pTouchHold = 0.0;
+            // Parameters
+            int division = 16;
+            double volumeThreshold = 0.14;
+            double spawnChance = 0.45;
+
+            double pSlide = 0.15;
+            double pHold = 0.08;
             double pDualRate = 0.0;
+            double pTouch = 0.0;
 
-            bool allowComplexSlide = false;
-            bool allowOuterTouch = false;
-            bool forceAdjacent = false;
-            bool slowSlide = false;
-            bool allowEx = false;
-            bool allowDual = false;
+            bool highBpmMode = targetBpm > 150;
 
-            int sameKeyMinGap = 2;
-            int complexSwitchGap = 4;
-
-            int chartStyle = rnd.Next(0, 3);
-            double styleMultiplier = 1.0;
-            if (chartStyle == 0) styleMultiplier = 0.85;
-            else if (chartStyle == 2) styleMultiplier = 1.15;
-
-            double randomFlux = (rnd.NextDouble() * 0.1) - 0.05;
-
-            maxSessionQuota = (int)(totalSeconds / 30.0);
-            minSessionQuota = (int)(totalSeconds / 45.0);
-            if (maxSessionQuota < 1) maxSessionQuota = 1;
-            if (minSessionQuota < 1) minSessionQuota = 1;
-            if (minSessionQuota > maxSessionQuota) minSessionQuota = maxSessionQuota;
-
-            currentSessionCount = 0;
-            sessionGlobalCooldown = 0;
 
             switch (levelIndex)
             {
                 case 0: // EASY
-                    division = 8; volumeThreshold = 0.18; spawnChance = 0.20;
-                    pHold = 0.50; pSlide = 0.01; pDualRate = 0.0;
-                    forceAdjacent = true; slowSlide = true; allowEx = false;
-                    maxSessionQuota = 0;
+                    division = 4; volumeThreshold = 0.20; spawnChance = 0.30; pHold = 0.40;
                     break;
-
                 case 1: // BASIC
-                    division = 8; volumeThreshold = 0.18; spawnChance = 0.35;
-                    pHold = 0.30; pSlide = 0.05; pDualRate = 0.08;
-                    forceAdjacent = true; slowSlide = true; allowComplexSlide = false;
-                    allowDual = true; allowEx = true;
-                    maxSessionQuota = Math.Max(1, maxSessionQuota / 2);
+                    division = 8; volumeThreshold = 0.18; spawnChance = 0.35; pHold = 0.25; pSlide = 0.05;
                     break;
-
                 case 2: // ADVANCED
-                    division = 8; volumeThreshold = 0.16; spawnChance = 0.50;
-                    pSlide = 0.12; pHold = 0.25;
-                    pTouch = 0.05; pTouchHold = 0.02; pDualRate = 0.15;
-                    forceAdjacent = true; allowDual = true; allowEx = true;
+                    division = 8; volumeThreshold = 0.16; spawnChance = 0.40; pSlide = 0.10; pHold = 0.20; pDualRate = 0.10; pTouch = 0.03;
                     break;
-
-                case 3: // EXPERT
-                    division = 16; volumeThreshold = 0.14; spawnChance = 0.38;
-                    pSlide = 0.15; pHold = 0.18;
-                    pTouch = 0.02; pTouchHold = 0.05; pDualRate = 0.15;
-                    forceAdjacent = true; slowSlide = false; allowComplexSlide = false;
-                    allowDual = true; allowEx = true; allowOuterTouch = false;
+                case 3: // EXPERT 
+                    division = 16; volumeThreshold = 0.14; spawnChance = 0.45; pSlide = 0.15; pHold = 0.08; pDualRate = 0.15; pTouch = 0.04;
                     break;
-
                 case 4: // MASTER
-                    division = 16; volumeThreshold = 0.12; spawnChance = 0.50;
-                    pSlide = 0.20; pHold = 0.12;
-                    pTouch = 0.05; pTouchHold = 0.05; pDualRate = 0.30;
-                    forceAdjacent = true; slowSlide = false; allowComplexSlide = true;
-                    allowDual = true; allowEx = true; allowOuterTouch = true;
+                    division = 16; volumeThreshold = 0.10; spawnChance = 0.55; pSlide = 0.22; pHold = 0.08; pDualRate = 0.16; pTouch = 0.06;
                     break;
-
                 case 5: // Re:MASTER
-                    division = 16; volumeThreshold = 0.08; spawnChance = 0.60;
-                    pSlide = 0.25; pHold = 0.05;
-                    pTouch = 0.08; pTouchHold = 0.05; pDualRate = 0.40;
-                    forceAdjacent = false; slowSlide = false; allowComplexSlide = true;
-                    allowDual = true; allowEx = true; allowOuterTouch = true;
-                    sameKeyMinGap = 1;
-                    complexSwitchGap = 2;
+                    division = 16; volumeThreshold = 0.08; spawnChance = 0.65; pSlide = 0.25; pHold = 0.08; pDualRate = 0.17; pTouch = 0.08;
                     break;
             }
 
-            spawnChance = (spawnChance * styleMultiplier) + randomFlux;
-            spawnChance = Math.Max(0.1, Math.Min(0.90, spawnChance));
+            // Dynamic density adjustment based on BPM
+            if (targetBpm > 150)
+            {
+                // Calculate the portion exceeding 150
+                double bpmOver = targetBpm - 150;
+
+                // Add an extra 0.002 for every additional 1 BPM (2% increase for every 10 BPM)
+                double multiplier = 1.02 + (bpmOver * 0.002);
+
+                // Set an upper limit to prevent irrational behavior at BPM 300 (maximum 1.3x)
+                if (multiplier > 1.3) multiplier = 1.3;
+
+                spawnChance *= multiplier;
+            }
+            else if (targetBpm < 100)
+            {
+                spawnChance *= 1.1;
+            }
+            if (spawnChance > 0.95) spawnChance = 0.95;
 
             sb.Append($"{{{division}}}");
 
@@ -140,331 +96,151 @@ namespace SiMaiGenerator
             double secondsPerSlot = secondsPerBeat * (4.0 / division);
             int totalSlots = (int)(totalSeconds / secondsPerSlot);
 
-            int lastPos = 1;
-            int skipSlots = 0;
+            ResetState();
 
-            centerHoldLockTimer = 0;
-            touchHoldCooldown = 0;
-            slideCooldown = 0;
-            touchSessionTimer = 0;
-            touchSessionIntervalCounter = 0;
-            silenceCounter = 0;
-            lastSlideEndPos = -1;
-            lastTouchNum = 1;
-            lastNoteTime = 0.0;
-            slideBusyUntil = -1;
-            lastTapPos = -1;
-            lastTapTimeIndex = -1;
-
-            for (int k = 0; k < 9; k++)
-            {
-                keyBusyUntil[k] = -1;
-                lastActionTimeOnKey[k] = -999;
-            }
+            float localMaxVolume = 0f;
 
             for (int i = 0; i < totalSlots; i++)
             {
-                UpdatePatternState(i, division, levelIndex);
-                if (centerHoldLockTimer > 0) centerHoldLockTimer--;
-                if (touchHoldCooldown > 0) touchHoldCooldown--;
+                UpdatePatternState(i, division);
+
                 if (slideCooldown > 0) slideCooldown--;
+                else { currentSlideStart = -1; currentSlideEnd = -1; }
 
-                if (touchSessionTimer > 0) touchSessionTimer--;
-                if (sessionGlobalCooldown > 0) sessionGlobalCooldown--;
+                if (breakCooldown > 0) breakCooldown--;
 
-                if (skipSlots > 0)
-                {
-                    sb.Append(",");
-                    FormatLine(sb, i, division);
-                    skipSlots--;
-                    silenceCounter = 0;
-                    continue;
-                }
-
-                bool isResting = (currentPattern == PatternType.Resting && rnd.NextDouble() < 0.6);
                 double currentTime = i * secondsPerSlot;
                 float currentVolume = analyzer.GetVolumeAt(currentTime, 0.05);
-                bool forceSpawn = false;
-                double timeSinceLast = currentTime - lastNoteTime;
+                localMaxVolume = Math.Max(localMaxVolume * 0.98f, currentVolume);
 
-                if (timeSinceLast > 1.5 && currentVolume > 0.02)
+                bool isMeasureStart = (i % 16 == 0);
+                bool isQuarter = (i % 4 == 0);
+                bool isEighth = (i % 2 == 0);
+
+                // --- 1. Spawn Check ---
+                double probMult = 1.0;
+                if (slideCooldown > 0) probMult = 0.1;
+
+                if (highBpmMode)
                 {
-                    forceSpawn = true;
-                    isResting = false;
+                    if (isQuarter) probMult *= 1.2;
+                    else if (isEighth) probMult *= 0.8;
+                    else
+                    {
+                        if (currentPattern == PatternType.Trill) probMult *= 0.2;
+                        else probMult = 0.0;
+                    }
                 }
 
-                double dynamicChance = spawnChance;
-                if (chartStyle == 0 && currentVolume < volumeThreshold * 1.5) dynamicChance *= 0.6;
-                else if (currentVolume < volumeThreshold * 1.5) dynamicChance *= 0.8;
+                bool shouldSpawn = false;
+                if (currentVolume > volumeThreshold * 0.9 && (rnd.NextDouble() < (spawnChance * probMult))) shouldSpawn = true;
+                if (isQuarter && currentVolume > volumeThreshold * 1.5) shouldSpawn = true;
 
-                bool volumeCheck = (currentVolume > volumeThreshold) && (rnd.NextDouble() < (currentVolume * dynamicChance + 0.1));
-                bool shouldSpawn = forceSpawn || volumeCheck;
-
-                if ((isResting && !forceSpawn) || !shouldSpawn)
+                if (!shouldSpawn)
                 {
                     sb.Append(",");
                     FormatLine(sb, i, division);
-                    silenceCounter++;
                     continue;
                 }
 
-                lastNoteTime = currentTime;
-
-                bool isBreak = (currentVolume > 0.82);
-                if (levelIndex == 0 && rnd.NextDouble() > 0.05) isBreak = false;
-                bool isEx = !isBreak && allowEx && (rnd.NextDouble() < 0.2);
-
+                // --- 2. Break Check ---
                 string suffix = "";
-                if (isBreak) suffix = "b";
-                else if (isEx) suffix = "x";
-
-                string mainNote = "";
-
-                int mainPos = GetNextPos(lastPos, forceAdjacent);
-
-                mainPos = GetSmartFreeKey(mainPos, i, sameKeyMinGap);
-
-                if (i - lastActionTimeOnKey[mainPos] < complexSwitchGap)
+                if (isQuarter)
                 {
-                    mainPos = (mainPos + 3) % 8 + 1;
-                    mainPos = GetSmartFreeKey(mainPos, i, sameKeyMinGap);
-                }
+                    bool allowBreak = false;
+                    if (isMeasureStart && currentVolume > volumeThreshold * 0.8) allowBreak = true;
+                    else if (breakCooldown <= 0 && currentVolume >= localMaxVolume * 0.95 && rnd.NextDouble() < 0.4) allowBreak = true;
 
-                double typeRoll = rnd.NextDouble();
-                bool isMainNoteTouchHold = false;
-                bool thisIsHoldOrSlide = false;
-
-                if (touchSessionTimer > 0)
-                {
-                    if (touchSessionIntervalCounter <= 0)
+                    if (allowBreak)
                     {
-                        mainNote = GeneratePatternTouch();
-                        touchSessionIntervalCounter = (levelIndex >= 3) ? 4 : 8;
-                        silenceCounter = 0;
-                    }
-                    else
-                    {
-                        sb.Append(",");
-                        FormatLine(sb, i, division);
-                        touchSessionIntervalCounter--;
-                        silenceCounter++;
-                        continue;
+                        suffix = "b";
+                        breakCooldown = division * rnd.Next(2, 5);
                     }
                 }
+
+                // --- 3. Position Decision ---
+                int mainPos = GetErgonomicNextPos(lastPos);
+                mainPos = GetSmartFreeKey(mainPos, i);
+
+                if (mainPos == -1)
+                {
+                    sb.Append(",");
+                    FormatLine(sb, i, division);
+                    continue;
+                }
+
+                string noteContent = "";
+
+                // A. Touch (Fixed Syntax Error)
+                if (pTouch > 0 && isQuarter && slideCooldown <= 0 && rnd.NextDouble() < pTouch)
+                {
+                    string region = rnd.NextDouble() > 0.6 ? "C" : $"B{mainPos}";
+                    // Fix: NEVER add suffix ("b") to Touch notes to avoid "Cb", "B4b" errors
+                    noteContent = $"{region}";
+                }
+                // B. Slide (Star)
+                else if (pSlide > 0 && isQuarter && slideCooldown <= 0 && rnd.NextDouble() < pSlide && !IsJack(mainPos, i))
+                {
+                    if (suffix == "" && isMeasureStart && breakCooldown <= 0)
+                    {
+                        suffix = "b";
+                        breakCooldown = division * 4;
+                    }
+
+                    // Call corrected GenerateSafeSlide
+                    noteContent = GenerateSafeSlide(mainPos, suffix, highBpmMode, levelIndex, out int endPos, out int durationSlots);
+                    lastPos = mainPos;
+
+                    slideCooldown = durationSlots + 4;
+                    currentSlideStart = mainPos;
+                    currentSlideEnd = endPos;
+                    LockKeyAndNeighbors(mainPos, i + durationSlots + 2);
+                    LockKeyAndNeighbors(endPos, i + durationSlots + 2);
+                }
+                // C. Hold
+                else if (pHold > 0 && slideCooldown <= 0 && rnd.NextDouble() < pHold && CheckVolumeSustain(analyzer, currentTime, secondsPerSlot, 4))
+                {
+                    int len = 4;
+                    noteContent = $"{mainPos}{suffix}h[{division}:{len}]";
+                    LockKeyAndNeighbors(mainPos, i + len + 2);
+                    lastPos = mainPos;
+                }
+                // D. Tap
                 else
                 {
-                    bool isOutro = (i > totalSlots * 0.90);
-                    bool isQuietSection = (currentVolume < volumeThreshold * 0.6);
-                    bool hasPreWait = (silenceCounter >= division);
-                    bool allowTouchHoldHere = (isOutro || isQuietSection) && hasPreWait;
+                    noteContent = $"{mainPos}{suffix}";
+                    lastPos = mainPos;
+                    lastActionTimeOnKey[mainPos] = i;
+                    keyBusyUntil[mainPos] = i + 2;
+                }
 
-                    // 1. Touch Hold
-                    if (allowTouchHoldHere && pTouchHold > 0 && rnd.NextDouble() < 0.2 && centerHoldLockTimer == 0 && touchHoldCooldown == 0)
+                // E. Dual
+                if (!noteContent.Contains("C") && !noteContent.Contains("B") &&
+                    pDualRate > 0 && slideCooldown <= 0 && !noteContent.Contains("Slide") && !noteContent.Contains("h") && rnd.NextDouble() < pDualRate)
+                {
+                    if (!highBpmMode || isEighth)
                     {
-                        int len = (division / 4) * rnd.Next(4, 9);
-                        mainNote = $"Ch[{division}:{len}]";
-                        skipSlots = len - 1;
-                        centerHoldLockTimer = len;
-                        touchHoldCooldown = len + (division * 8);
-                        isMainNoteTouchHold = true;
-                    }
-                    // 2. Slide
-                    else if (pSlide > 0 && typeRoll < pSlide && slideCooldown == 0)
-                    {
-                        // Check if start key was recently used
-                        if (i - lastActionTimeOnKey[mainPos] < complexSwitchGap)
+                        int dualPos = GetSafeDualPos(mainPos);
+                        if (IsKeySafe(dualPos, i) && !IsBottomSpam(mainPos, dualPos) && !IsVerticalSpam(mainPos, dualPos) && !IsJack(dualPos, i))
                         {
-                            mainPos = (mainPos + 3) % 8 + 1;
-                            mainPos = GetSmartFreeKey(mainPos, i, complexSwitchGap);
-                        }
+                            string dualSuffix = (suffix == "b") ? "b" : "";
 
-                        if (mainPos == lastSlideEndPos) mainPos = (mainPos % 8) + 1;
-                        mainPos = GetSmartFreeKey(mainPos, i, complexSwitchGap);
-
-                        string slideSuffix = isBreak ? "b" : "";
-                        mainNote = GenerateValidSlide(mainPos, allowComplexSlide, slideSuffix, slowSlide, out int slideEnd);
-
-                        bool pathBlocked = IsSlidePathBlocked(mainNote, mainPos, i);
-
-                        if (!pathBlocked)
-                        {
-                            lastPos = mainPos;
-                            lastSlideEndPos = slideEnd;
-
-                            int slideDurationSlots = slowSlide ? (division * 2) : division;
-                            MarkSlidePathBusy(mainNote, mainPos, i, slideDurationSlots);
-                            slideBusyUntil = i + slideDurationSlots;
-
-                            lastActionTimeOnKey[mainPos] = i;
-                            thisIsHoldOrSlide = true;
-
-                            if (levelIndex <= 3) slideCooldown = division * 2;
-                            else slideCooldown = division;
-                        }
-                        else
-                        {
-                            mainNote = $"{mainPos}{suffix}";
-                            lastPos = mainPos;
-                            lastActionTimeOnKey[mainPos] = i;
-                        }
-                    }
-                    // 3. Touch
-                    else if (pTouch > 0 && typeRoll < (pSlide + pTouch) && i >= slideBusyUntil)
-                    {
-                        bool isBusy = false;
-                        for (int k = 1; k <= 8; k++) if (keyBusyUntil[k] > i) isBusy = true;
-
-                        if (!isBusy)
-                        {
-                            bool canSpawnSession = (currentSessionCount < maxSessionQuota) && (sessionGlobalCooldown == 0);
-                            bool forceCatchUp = (currentSessionCount < minSessionQuota) && (i > totalSlots * 0.6) && (sessionGlobalCooldown == 0);
-                            double actualTouchChance = forceCatchUp ? 0.8 : 1.0;
-
-                            if (canSpawnSession && rnd.NextDouble() < actualTouchChance)
+                            // Skip dual if adjacent break (hard to read)
+                            if (suffix == "b" && IsAdjacent(mainPos, dualPos))
                             {
-                                mainNote = GenerateImprovedTouch("", lastPos, allowOuterTouch);
-                                touchSessionTimer = division * rnd.Next(1, 3);
-                                currentSessionCount++;
-                                sessionGlobalCooldown = totalSlots / (maxSessionQuota + 2);
-                                if (levelIndex >= 3) touchPatternMode = rnd.Next(0, 4);
-                                else touchPatternMode = rnd.Next(0, 2);
-                                touchPatternStep = rnd.Next(0, 2) == 0 ? 1 : -1;
-                                dualToggleType = rnd.Next(0, 2);
-                                dualToggleState = false;
-                                touchSessionIntervalCounter = (levelIndex >= 3) ? 4 : 8;
+                                // Do nothing
                             }
                             else
                             {
-                                if (forceSpawn) suffix = "";
-                                else if (isBreak) suffix = "b";
-
-                                mainPos = GetSmartFreeKey(mainPos, i, sameKeyMinGap);
-                                mainNote = $"{mainPos}{suffix}";
-                                lastPos = mainPos;
-                                lastActionTimeOnKey[mainPos] = i;
-                            }
-                        }
-                        else
-                        {
-                            mainPos = GetSmartFreeKey(mainPos, i, sameKeyMinGap);
-                            mainNote = $"{mainPos}{suffix}";
-                            lastPos = mainPos;
-                            lastActionTimeOnKey[mainPos] = i;
-                        }
-                    }
-                    // 4. Hold
-                    else if (pHold > 0 && typeRoll < (pSlide + pTouch + pHold))
-                    {
-                        if (i - lastActionTimeOnKey[mainPos] < complexSwitchGap)
-                        {
-                            mainPos = (mainPos + 3) % 8 + 1;
-                            mainPos = GetSmartFreeKey(mainPos, i, complexSwitchGap);
-                        }
-
-                        int holdLen = 0;
-                        int maxCheck = (division == 16) ? 8 : 4;
-                        for (int k = 1; k <= maxCheck; k++)
-                        {
-                            if (i + k >= totalSlots) break;
-                            if (analyzer.GetVolumeAt(currentTime + k * secondsPerSlot) > volumeThreshold * 0.8) holdLen++;
-                            else break;
-                        }
-
-                        if (holdLen > 0)
-                        {
-                            mainNote = $"{mainPos}h[{division}:{holdLen}]";
-                            keyBusyUntil[mainPos] = i + holdLen + 2;
-
-                            lastPos = mainPos;
-                            skipSlots = holdLen - 1;
-                            lastActionTimeOnKey[mainPos] = i;
-                            thisIsHoldOrSlide = true;
-                        }
-                        else
-                        {
-                            mainNote = $"{mainPos}{suffix}";
-                            lastPos = mainPos;
-                            lastActionTimeOnKey[mainPos] = i;
-                        }
-                    }
-                    // 5. Tap
-                    else
-                    {
-                        if (forceSpawn) suffix = "";
-                        else if (isBreak) suffix = "b";
-                        else if (isEx) suffix = "x";
-
-                        mainPos = GetSmartFreeKey(mainPos, i, sameKeyMinGap);
-                        mainNote = $"{mainPos}{suffix}";
-                        lastPos = mainPos;
-                        lastActionTimeOnKey[mainPos] = i;
-                    }
-                }
-
-                lastTapPos = mainPos;
-                lastTapTimeIndex = i;
-                silenceCounter = 0;
-
-                // 6. Dual Note
-                if (!forceSpawn && allowDual && !isMainNoteTouchHold && rnd.NextDouble() < pDualRate)
-                {
-                    if (touchSessionTimer > 0)
-                    {
-                        sb.Append(mainNote);
-                    }
-                    else
-                    {
-                        int dualPos;
-                        if (mainNote.Contains("C") || mainNote.Contains("B") || mainNote.Contains("E"))
-                        {
-                            dualPos = (lastPos + 3) % 8 + 1;
-                            dualPos = GetSmartFreeKey(dualPos, i, sameKeyMinGap);
-                            string dualSuffix = isBreak ? "b" : "";
-                            sb.Append($"{mainNote}/{dualPos}{dualSuffix}");
-                            if (!dualSuffix.Contains("C")) lastActionTimeOnKey[dualPos] = i;
-                        }
-                        else
-                        {
-                            int offset = rnd.Next(0, 2) == 0 ? 4 : 1;
-                            dualPos = (lastPos + offset - 1) % 8 + 1;
-                            if (dualPos == lastPos) dualPos = (dualPos % 8) + 1;
-
-                            int safeDualPos = -1;
-
-                            for (int attempt = 0; attempt < 3; attempt++)
-                            {
-                                int tryPos = GetSmartFreeKey(dualPos, i, sameKeyMinGap);
-                                int diff = Math.Abs(tryPos - mainPos);
-                                if (diff != 0 && diff != 1 && diff != 7)
-                                {
-                                    safeDualPos = tryPos;
-                                    break;
-                                }
-                                dualPos = (dualPos % 8) + 1;
-                            }
-
-                            if (safeDualPos != -1)
-                            {
-                                string dualSuffix = isBreak ? "b" : (isEx ? "x" : "");
-                                if (thisIsHoldOrSlide)
-                                    sb.Append($"{mainNote}/{safeDualPos}{dualSuffix}");
-                                else
-                                    sb.Append($"{mainNote}/{safeDualPos}{dualSuffix}");
-
-                                lastActionTimeOnKey[safeDualPos] = i;
-                            }
-                            else
-                            {
-                                sb.Append(mainNote);
+                                noteContent = $"{noteContent}/{dualPos}{dualSuffix}";
+                                lastActionTimeOnKey[dualPos] = i;
+                                keyBusyUntil[dualPos] = i + 2;
                             }
                         }
                     }
                 }
-                else
-                {
-                    sb.Append(mainNote);
-                }
 
+                sb.Append(noteContent);
                 sb.Append(",");
                 FormatLine(sb, i, division);
             }
@@ -473,196 +249,89 @@ namespace SiMaiGenerator
             return sb.ToString();
         }
 
-        private int GetSmartFreeKey(int startPos, int currentIndex, int minGap)
+        // --- Core Methods ---
+
+        // Fix: GenerateSafeSlide handles 7s7, 1V1 path errors
+        private string GenerateSafeSlide(int start, string suffix, bool highBpm, int levelIndex, out int endPos, out int durationSlots)
         {
-            bool IsSafe(int pos)
+            // 1. Define Shapes (Removed unstable s, z, V)
+            string[] simpleShapes = { "-", "^", "v" }; // Simple: Line, Arcs
+            string[] complexShapes = { "<", ">", "p", "q" }; // Complex: Fans, Lightning
+
+            // 2. Determine Complexity
+            double simpleRate = 1.0;
+            switch (levelIndex)
             {
-                if (keyBusyUntil[pos] > currentIndex) return false;
-                if ((currentIndex - lastActionTimeOnKey[pos]) < minGap) return false;
-                return true;
+                case 3: simpleRate = 0.70; break; // Expert
+                case 4: simpleRate = 0.55; break; // Master
+                case 5: simpleRate = 0.50; break; // Re:Master
             }
 
-            if (IsSafe(startPos)) return startPos;
+            string shape;
+            if (rnd.NextDouble() < simpleRate) shape = simpleShapes[rnd.Next(simpleShapes.Length)];
+            else shape = complexShapes[rnd.Next(complexShapes.Length)];
 
-            int opposite = (startPos + 4 - 1) % 8 + 1;
-            if (IsSafe(opposite)) return opposite;
+            // 3. Calculate Valid End Position
+            int end = start;
 
-            for (int offset = 1; offset < 8; offset++)
+            if (shape == "-")
             {
-                int checkPos = (startPos + offset - 1) % 8 + 1;
-                if (IsSafe(checkPos)) return checkPos;
+                end = (start + 4 - 1) % 8 + 1; // Line: Opposite side (1->5)
             }
-            return startPos;
-        }
-
-        private bool IsSlidePathBlocked(string slideStr, int startPos, int currentIndex)
-        {
-            List<int> path = CalculateSlidePath(slideStr, startPos);
-            foreach (int pos in path)
+            else if (shape == "^" || shape == "v")
             {
-                if (keyBusyUntil[pos] > currentIndex) return true;
-                if ((currentIndex - lastActionTimeOnKey[pos]) < 2) return true;
+                end = (start + 2 - 1) % 8 + 1; // Arc: Skip 1 key (1->3)
             }
-            return false;
-        }
-
-        private void MarkSlidePathBusy(string slideStr, int startPos, int currentTime, int duration)
-        {
-            List<int> path = CalculateSlidePath(slideStr, startPos);
-            int busyUntil = currentTime + duration;
-            foreach (int pos in path)
+            else if (shape == "<" || shape == ">")
             {
-                keyBusyUntil[pos] = busyUntil;
+                end = (start + 2 - 1) % 8 + 1; // Fan: Skip 1 key (1->3)
             }
-        }
-
-        private List<int> CalculateSlidePath(string slideStr, int startPos)
-        {
-            List<int> path = new List<int>();
-            int endPos = startPos;
-            char[] splitChars = new char[] { '-', '^', 'v', 'p', 'q', '>', '<', 's', 'z', 'V' };
-            int opIndex = slideStr.IndexOfAny(splitChars);
-            char type = (opIndex != -1) ? slideStr[opIndex] : '-';
-
-            if (opIndex != -1)
+            else if (shape == "p" || shape == "q")
             {
-                if (int.TryParse(slideStr.Substring(opIndex + 1, 1), out int parsedEnd))
-                {
-                    endPos = parsedEnd;
-                }
+                end = (start + 4 - 1) % 8 + 1; // Lightning: Opposite side (1->5)
             }
 
-            path.Add(startPos);
-            path.Add(endPos);
-
-            if (type == 'p' || type == 'q' || type == 'v' || type == 'V')
+            // 4. Safety Check: Never allow start == end
+            if (end == start)
             {
-                for (int k = 1; k <= 8; k++) path.Add(k);
+                shape = "-";
+                end = (start + 4 - 1) % 8 + 1;
+            }
+
+            endPos = end;
+
+            // 5. Speed Logic
+            if (highBpm)
+            {
+                durationSlots = 4;
+                return $"{start}{suffix}{shape}{end}[4:1]";
             }
             else
             {
-                int distCW = (endPos - startPos + 8) % 8;
-                int distCCW = (startPos - endPos + 8) % 8;
-
-                if (distCW <= distCCW)
-                {
-                    for (int k = 1; k < distCW; k++) path.Add((startPos + k - 1) % 8 + 1);
-                }
-                else
-                {
-                    for (int k = 1; k < distCCW; k++) path.Add((startPos - k - 1 + 8) % 8 + 1);
-                }
+                durationSlots = 8;
+                return $"{start}{suffix}{shape}{end}[2:1]";
             }
-            return path;
+        }
+        private string GetProximityTouchPos(int pos)
+        {
+            if (rnd.NextDouble() < 0.5) return "C";
+            int offset = rnd.Next(-1, 2);
+            int targetB = (pos + offset - 1 + 8) % 8 + 1;
+            return $"B{targetB}";
         }
 
+        private bool IsJack(int pos, int currentIndex) => lastActionTimeOnKey[pos] >= currentIndex - 2;
+        private bool IsAdjacent(int p1, int p2) { int diff = Math.Abs(p1 - p2); return diff == 1 || diff == 7; }
+        private void ResetState() { lastPos = 1; patternCounter = 0; slideCooldown = 0; silenceCounter = 0; breakCooldown = 0; currentSlideStart = -1; currentSlideEnd = -1; for (int k = 0; k < 9; k++) { keyBusyUntil[k] = -1; lastActionTimeOnKey[k] = -999; } }
+        private void LockKeyAndNeighbors(int pos, int untilIndex) { keyBusyUntil[pos] = untilIndex; lastActionTimeOnKey[pos] = untilIndex; int left = (pos - 2 + 8) % 8 + 1; int right = (pos % 8) + 1; if (keyBusyUntil[left] < untilIndex - 1) keyBusyUntil[left] = untilIndex - 1; if (keyBusyUntil[right] < untilIndex - 1) keyBusyUntil[right] = untilIndex - 1; }
+        private bool IsBottomSpam(int p1, int p2) => (p1 == 4 && p2 == 5) || (p1 == 5 && p2 == 4);
+        private bool IsVerticalSpam(int p1, int p2) { int diff = Math.Abs(p1 - p2); return diff == 5 || diff == 3; }
+        private int GetErgonomicNextPos(int current) { int next = current; if (currentPattern == PatternType.Trill) { next = 9 - current; if (IsBottomSpam(current, next)) next = 3; } else { int move = 1; if (rnd.NextDouble() > 0.9) move = 2; next = current + (move * patternDirection); while (next > 8) next -= 8; while (next < 1) next += 8; } return next; }
+        private int GetSafeDualPos(int pos) { int[] preferred = new int[] { }; switch (pos) { case 1: preferred = new int[] { 8, 6, 2 }; break; case 2: preferred = new int[] { 7, 3, 1 }; break; case 3: preferred = new int[] { 2, 6, 8 }; break; case 4: preferred = new int[] { 3, 6 }; break; case 5: preferred = new int[] { 6, 3 }; break; case 6: preferred = new int[] { 5, 3, 1 }; break; case 7: preferred = new int[] { 2, 6, 8 }; break; case 8: preferred = new int[] { 1, 7, 3 }; break; } foreach (int p in preferred) { if (IsKeySafe(p, -1)) return p; } return (pos % 8) + 1; }
+        private bool IsKeySafe(int pos, int currentIndex) { if (keyBusyUntil[pos] > currentIndex) return false; if (currentSlideStart != -1) { if (pos == currentSlideStart || pos == currentSlideEnd) return false; int sL = (currentSlideStart - 2 + 8) % 8 + 1; int sR = (currentSlideStart % 8) + 1; int eL = (currentSlideEnd - 2 + 8) % 8 + 1; int eR = (currentSlideEnd % 8) + 1; if (pos == sL || pos == sR || pos == eL || pos == eR) return false; } return true; }
+        private int GetSmartFreeKey(int startPos, int currentIndex) { int[] offsets = { 0, 1, -1, 2, -2 }; foreach (int off in offsets) { int check = startPos + off; while (check > 8) check -= 8; while (check < 1) check += 8; if (IsJack(check, currentIndex)) continue; if (IsKeySafe(check, currentIndex)) return check; } return -1; }
         private void FormatLine(StringBuilder sb, int index, int division) { if ((index + 1) % division == 0) sb.Append("\n"); }
-        private void UpdatePatternState(int currentIndex, int division, int levelIndex) { int switchInterval = division * 4; if (patternCounter <= 0) { patternCounter = switchInterval; double r = rnd.NextDouble(); if ((levelIndex == 2 || levelIndex == 3) && r < 0.1) { currentPattern = PatternType.Resting; return; } if (r < 0.4) currentPattern = PatternType.Stream; else if (r < 0.7) currentPattern = PatternType.Trill; else if (r < 0.85) currentPattern = PatternType.Zigzag; else currentPattern = PatternType.Random; patternDirection = rnd.Next(0, 2) == 0 ? 1 : -1; } patternCounter--; }
-        private int GetNextPos(int current, bool forceAdjacent) { if (forceAdjacent) { int move = rnd.Next(0, 2) == 0 ? 1 : -1; if (rnd.NextDouble() < 0.3) move = 0; int next = current + move; while (next > 8) next -= 8; while (next < 1) next += 8; return next; } int pNext = current; switch (currentPattern) { case PatternType.Stream: pNext = current + patternDirection; break; case PatternType.Trill: pNext = current + 4; break; case PatternType.Zigzag: pNext = current + (2 * patternDirection); break; default: int rMove = rnd.Next(1, 4); pNext = rnd.Next(0, 2) == 0 ? current + rMove : current - rMove; break; } while (pNext > 8) pNext -= 8; while (pNext < 1) pNext += 8; return pNext; }
-
-        private string GenerateValidSlide(int start, bool complex, string suffix, bool slow, out int slideEnd)
-        {
-            string duration = slow ? "[4:2]" : "[4:1]";
-            bool forceSimple = !complex || (rnd.NextDouble() < 0.7);
-
-            if (forceSimple)
-            {
-                int offset = rnd.Next(3, 6);
-                int end = (start + offset - 1) % 8 + 1;
-                slideEnd = end;
-                return $"{start}{suffix}-{end}{duration}";
-            }
-
-            int type = rnd.Next(0, 5);
-            string slideStr = "";
-            int endPos = start;
-
-            switch (type)
-            {
-                case 0: int offsetArc = rnd.Next(2, 4); endPos = (start + offsetArc - 1) % 8 + 1; slideStr = $"{start}{suffix}^{endPos}{duration}"; break;
-                case 1: endPos = (start + 2) % 8 + 1; slideStr = $"{start}{suffix}>{endPos}{duration}"; break;
-                case 2: endPos = (start + 2) % 8 + 1; slideStr = $"{start}{suffix}v{endPos}{duration}"; break;
-                case 3: endPos = (start + 4) % 8 + 1; slideStr = $"{start}{suffix}p{endPos}{duration}"; break;
-                case 4: endPos = (start + 4) % 8 + 1; slideStr = $"{start}{suffix}q{endPos}{duration}"; break;
-            }
-            slideEnd = endPos;
-            return slideStr;
-        }
-
-        private string GeneratePatternTouch()
-        {
-            int nextPos = lastTouchNum;
-            string region = "B";
-
-            switch (touchPatternMode)
-            {
-                case 0:
-                    nextPos = lastTouchNum + touchPatternStep;
-                    if (nextPos > 8) nextPos = 1;
-                    if (nextPos < 1) nextPos = 8;
-                    lastTouchNum = nextPos;
-                    return $"{region}{nextPos}";
-
-                case 1:
-                    nextPos = (lastTouchNum + 4);
-                    if (nextPos > 8) nextPos -= 8;
-                    lastTouchNum = nextPos;
-                    return $"{region}{nextPos}";
-
-                case 2:
-                    nextPos = lastTouchNum + touchPatternStep;
-                    if (nextPos > 8) nextPos = 1;
-                    if (nextPos < 1) nextPos = 8;
-                    lastTouchNum = nextPos;
-                    int dualPos = (nextPos + 4);
-                    if (dualPos > 8) dualPos -= 8;
-                    return $"{region}{nextPos}/{region}{dualPos}";
-
-                case 3:
-                    dualToggleState = !dualToggleState;
-                    int p1, p2;
-                    if (dualToggleType == 0)
-                    {
-                        if (dualToggleState) { p1 = 1; p2 = 5; }
-                        else { p1 = 3; p2 = 7; }
-                    }
-                    else
-                    {
-                        if (dualToggleState) { p1 = 2; p2 = 6; }
-                        else { p1 = 4; p2 = 8; }
-                    }
-                    return $"{region}{p1}/{region}{p2}";
-            }
-
-            return $"{region}{nextPos}";
-        }
-
-        private string GenerateImprovedTouch(string suffix, int lastTapPos, bool allowOuter)
-        {
-            string finalSuffix = "";
-            if (centerHoldLockTimer > 0) allowOuter = true;
-            double roll = rnd.NextDouble();
-            string selectedTouch = "";
-
-            for (int retry = 0; retry < 3; retry++)
-            {
-                if (centerHoldLockTimer == 0 && roll < 0.3)
-                {
-                    selectedTouch = $"C{finalSuffix}";
-                    if (lastTouchNum == 9) { roll = 1.0; continue; }
-                    lastTouchNum = 9;
-                    return selectedTouch;
-                }
-
-                int touchPos = rnd.Next(1, 9);
-                if (touchPos == lastTapPos) touchPos = (touchPos % 8) + 1;
-
-                string region = rnd.NextDouble() < 0.7 ? "B" : "E";
-                lastTouchNum = touchPos;
-
-                return $"{region}{touchPos}{finalSuffix}";
-            }
-            return $"B{(lastTapPos % 8) + 1}{finalSuffix}";
-        }
+        private void UpdatePatternState(int index, int division) { if (patternCounter > 0) { patternCounter--; return; } patternCounter = division * rnd.Next(2, 6); patternDirection = rnd.Next(0, 2) == 0 ? 1 : -1; double r = rnd.NextDouble(); if (r < 0.6) currentPattern = PatternType.Stream; else if (r < 0.9) currentPattern = PatternType.Trill; else currentPattern = PatternType.Resting; }
+        private bool CheckVolumeSustain(AudioAnalyzer analyzer, double startTime, double step, int checkCount) { for (int k = 1; k <= checkCount; k++) if (analyzer.GetVolumeAt(startTime + k * step) < 0.1) return false; return true; }
     }
 }
