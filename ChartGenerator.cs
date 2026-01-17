@@ -51,22 +51,22 @@ namespace SiMaiGenerator
             switch (levelIndex)
             {
                 case 0: // EASY
-                    division = 4; volumeThreshold = 0.20; spawnChance = 0.30; pHold = 0.40;
+                    division = 4; volumeThreshold = 0.20; spawnChance = 0.20; pHold = 0.40;
                     break;
                 case 1: // BASIC
-                    division = 8; volumeThreshold = 0.18; spawnChance = 0.35; pHold = 0.25; pSlide = 0.05;
+                    division = 8; volumeThreshold = 0.18; spawnChance = 0.25; pHold = 0.10; pSlide = 0.05;
                     break;
                 case 2: // ADVANCED
-                    division = 8; volumeThreshold = 0.16; spawnChance = 0.40; pSlide = 0.10; pHold = 0.20; pDualRate = 0.10; pTouch = 0.03;
+                    division = 8; volumeThreshold = 0.16; spawnChance = 0.30; pSlide = 0.10; pHold = 0.08; pDualRate = 0.10; pTouch = 0.01;
                     break;
                 case 3: // EXPERT 
-                    division = 16; volumeThreshold = 0.14; spawnChance = 0.45; pSlide = 0.15; pHold = 0.08; pDualRate = 0.15; pTouch = 0.04;
+                    division = 16; volumeThreshold = 0.14; spawnChance = 0.35; pSlide = 0.15; pHold = 0.08; pDualRate = 0.15; pTouch = 0.015;
                     break;
                 case 4: // MASTER
-                    division = 16; volumeThreshold = 0.10; spawnChance = 0.55; pSlide = 0.22; pHold = 0.08; pDualRate = 0.16; pTouch = 0.06;
+                    division = 16; volumeThreshold = 0.10; spawnChance = 0.40; pSlide = 0.22; pHold = 0.08; pDualRate = 0.16; pTouch = 0.02;
                     break;
                 case 5: // Re:MASTER
-                    division = 16; volumeThreshold = 0.08; spawnChance = 0.65; pSlide = 0.25; pHold = 0.08; pDualRate = 0.17; pTouch = 0.08;
+                    division = 16; volumeThreshold = 0.08; spawnChance = 0.45; pSlide = 0.25; pHold = 0.08; pDualRate = 0.17; pTouch = 0.03;
                     break;
             }
 
@@ -300,17 +300,28 @@ namespace SiMaiGenerator
 
             endPos = end;
 
-            // 5. Speed Logic
-            if (highBpm)
+            // 5. Slide Speed ​​Logic (Global Smoothness Optimization)
+            string durationStr;
+            double speedRoll = rnd.NextDouble();
+
+
+            if (speedRoll < 0.15)
             {
-                durationSlots = 4;
-                return $"{start}{suffix}{shape}{end}[4:1]";
+                durationStr = "[16:1]";
+                durationSlots = 1; 
             }
-            else
+            else if (speedRoll < 0.60) 
             {
-                durationSlots = 8;
-                return $"{start}{suffix}{shape}{end}[2:1]";
+                durationStr = "[8:1]";
+                durationSlots = 2;
             }
+            else // 40%
+            {
+                durationStr = "[4:1]";
+                durationSlots = 4; 
+            }
+
+            return $"{start}{suffix}{shape}{end}{durationStr}";
         }
         private string GetProximityTouchPos(int pos)
         {
